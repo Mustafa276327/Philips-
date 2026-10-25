@@ -20,7 +20,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.abs
 import kotlin.math.cos
@@ -35,7 +34,10 @@ private val CODES: Map<String, Int> = mapOf(
     "red" to 0x6D, "green" to 0x6E, "yellow" to 0x6F, "blue" to 0x70,
     // Aşağıdakiler yaygın Philips kodlarıdır; TV'nizde tepki vermezse değerleri değiştirin.
     "back" to 0x0A, "src" to 0x38, "txt" to 0x3C, "menu" to 0x40,
-    "rew" to 0x2B, "play" to 0x2C, "ff" to 0x28, "pause" to 0x30, "stop" to 0x31
+    "rew" to 0x2B, "play" to 0x2C, "ff" to 0x28, "pause" to 0x30, "stop" to 0x31,
+    // Önceden kodu olmayan tuşlar (tahmini Philips RC-6 değerleri). Tepki vermeyenin sayısını değiştirin.
+    "exit" to 0x09, "guide" to 0xCC, "set" to 0x43, "amb" to 0x68,
+    "assist" to 0xD0, "apps" to 0x82, "prime" to 0xD1, "yt" to 0xD2, "nflx" to 0xD3
 ) + (0..9).associate { "d$it" to it }
 
 private val REPEATING = setOf("vu", "vd", "cu", "cd", "up", "down", "left", "right")
@@ -177,11 +179,14 @@ class MainActivity : Activity() {
     private fun row(h: Int, vararg v: View): LinearLayout {
         val l = LinearLayout(this)
         l.orientation = LinearLayout.HORIZONTAL
-        for (x in v) l.addView(x, LinearLayout.LayoutParams(0, dp(h), 1f).apply {
-            setMargins(dp(5), dp(5), dp(5), dp(5))
+        for (x in v) l.addView(x, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            setMargins(dp(4), dp(2), dp(4), dp(2))
         })
         return l
     }
+
+    /** Ekran yüksekliğine sığması için ağırlıklı satır. */
+    private fun wp(w: Float) = LinearLayout.LayoutParams(-1, 0, w)
 
     private fun rocker(upKey: String, downKey: String, kind: String): LinearLayout {
         val l = LinearLayout(this)
@@ -189,7 +194,7 @@ class MainActivity : Activity() {
         l.background = shape(0xFF1C1C20.toInt(), 16)
         fun half(t: String, k: String) = tbtn(t, k, fill = 0, size = 24f, r = 16, press = 0x33FFFFFF, stroke = 0)
         l.addView(half("+", upKey), LinearLayout.LayoutParams(-1, 0, 1f))
-        l.addView(Icon(this, kind, 0xFFE8E8EC.toInt()), LinearLayout.LayoutParams(-1, dp(36)))
+        l.addView(Icon(this, kind, 0xFFE8E8EC.toInt()), LinearLayout.LayoutParams(-1, dp(30)))
         l.addView(half("−", downKey), LinearLayout.LayoutParams(-1, 0, 1f))
         return l
     }
@@ -200,17 +205,17 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = 0xFF1B120D.toInt()
 
-        val sv = ScrollView(this)
-        sv.setBackgroundColor(0xFF2A1D16.toInt())
+        // Kaydırma yok: her şey ekrana sığacak şekilde ağırlıklarla bölünür
         val page = LinearLayout(this)
         page.orientation = LinearLayout.VERTICAL
         page.gravity = Gravity.CENTER_HORIZONTAL
-        page.setPadding(dp(12), dp(14), dp(12), dp(28))
-        sv.addView(page, FrameLayout.LayoutParams(-1, -2))
+        page.setBackgroundColor(0xFF2A1D16.toInt())
+        page.fitsSystemWindows = true
+        page.setPadding(dp(8), dp(4), dp(8), dp(6))
 
         status = TextView(this)
         status.setTextColor(0xFFD9C7B8.toInt())
-        status.textSize = 12f
+        status.textSize = 11f
         status.gravity = Gravity.CENTER
         status.text = if (ir?.hasIrEmitter() == true) "IR vericisi hazır" else "Bu telefonda IR vericisi bulunamadı"
         page.addView(status, LinearLayout.LayoutParams(-1, -2))
@@ -219,76 +224,82 @@ class MainActivity : Activity() {
         rc.orientation = LinearLayout.VERTICAL
         rc.gravity = Gravity.CENTER_HORIZONTAL
         rc.background = shape(0xFF0B0B0D.toInt(), 18, 0xFF34343B.toInt())
-        rc.setPadding(dp(12), dp(14), dp(12), dp(26))
-        val width = minOf(resources.displayMetrics.widthPixels - dp(24), dp(340))
-        page.addView(rc, LinearLayout.LayoutParams(width, -2).apply { topMargin = dp(8) })
-        val full = { LinearLayout.LayoutParams(-1, -2) }
+        rc.setPadding(dp(8), dp(8), dp(8), dp(8))
+        val width = minOf(resources.displayMetrics.widthPixels - dp(16), dp(400))
+        page.addView(rc, LinearLayout.LayoutParams(width, 0, 1f).apply { topMargin = dp(4) })
 
         // güç + ambilight
-        val power = ibtn("pw", "power", 0xFFFF4A3D.toInt(), 26)
-        rc.addView(power, LinearLayout.LayoutParams(dp(52), dp(52)).apply { setMargins(0, dp(2), 0, dp(6)) })
-        rc.addView(tbtn("AMBILIGHT", "amb", size = 12f, r = 12, bold = true),
-            LinearLayout.LayoutParams(dp(150), dp(32)).apply { bottomMargin = dp(4) })
+        val powerRow = LinearLayout(this)
+        powerRow.gravity = Gravity.CENTER
+        powerRow.addView(ibtn("pw", "power", 0xFFFF4A3D.toInt(), 26), LinearLayout.LayoutParams(dp(56), -1).apply {
+            setMargins(0, dp(1), 0, dp(3))
+        })
+        rc.addView(powerRow, wp(5f))
+        val ambRow = LinearLayout(this)
+        ambRow.gravity = Gravity.CENTER
+        ambRow.addView(tbtn("AMBILIGHT", "amb", size = 12f, r = 12, bold = true),
+            LinearLayout.LayoutParams(dp(150), -1).apply { setMargins(0, dp(2), 0, dp(2)) })
+        rc.addView(ambRow, wp(3.2f))
 
         // uygulama tuşları
         val white = 0xFFE9E5DC.toInt()
-        rc.addView(row(40,
+        rc.addView(row(0,
             tbtn("prime video", "prime", white, 0xFF0B3A66.toInt(), 13f, 14, true),
-            tbtn("YouTube", "yt", white, 0xFFCC0000.toInt(), 13f, 14, true)), full())
-        rc.addView(row(40,
+            tbtn("YouTube", "yt", white, 0xFFCC0000.toInt(), 13f, 14, true)), wp(4f))
+        rc.addView(row(0,
             tbtn("NETFLIX", "nflx", white, 0xFFD81F26.toInt(), 13f, 14, true),
-            tbtn("•••", "apps", white, 0xFF444444.toInt(), 15f, 14, true)), full())
+            tbtn("•••", "apps", white, 0xFF444444.toInt(), 15f, 14, true)), wp(4f))
 
-        rc.addView(row(54,
+        rc.addView(row(0,
             lab(ibtn("src", "src"), "SOURCES"),
             lab(tbtn("TV", "exit", bold = true), "EXIT"),
-            lab(ibtn("ls", "menu"), "MENU")), full())
+            lab(ibtn("ls", "menu"), "MENU")), wp(6f))
 
-        // yön tuşları
-        val pad = Pad(this, { k -> sv.requestDisallowInterceptTouchEvent(true); down(k) }, { release() })
-        rc.addView(pad, LinearLayout.LayoutParams(dp(220), dp(220)).apply { setMargins(0, dp(4), 0, dp(4)) })
+        // yön tuşları (kare alana sığar)
+        val pad = Pad(this, { k -> down(k) }, { release() })
+        rc.addView(pad, LinearLayout.LayoutParams(-1, 0, 20f).apply { setMargins(0, dp(2), 0, dp(2)) })
 
-        rc.addView(row(40, ibtn("bk", "back"), ibtn("as", "assist"), ibtn("hm", "home")), full())
-        rc.addView(row(40, ibtn("rw", "rew"), ibtn("pl", "play"), ibtn("ff", "ff")), full())
-        rc.addView(row(54,
+        rc.addView(row(0, ibtn("bk", "back"), ibtn("as", "assist"), ibtn("hm", "home")), wp(4.2f))
+        rc.addView(row(0, ibtn("rw", "rew"), ibtn("pl", "play"), ibtn("ff", "ff")), wp(4.2f))
+        rc.addView(row(0,
             lab(tbtn("+", "info", size = 22f), "INFO"),
             lab(ibtn("pa", "pause"), " "),
-            lab(ibtn("st", "stop"), " ")), full())
-        rc.addView(row(28,
+            lab(ibtn("st", "stop"), " ")), wp(5.5f))
+        rc.addView(row(0,
             cbtn(0xFFE8392F.toInt(), "red"), cbtn(0xFF2FC24A.toInt(), "green"),
-            cbtn(0xFFE8E4DA.toInt(), "yellow"), cbtn(0xFF27B3E6.toInt(), "blue")), full())
+            cbtn(0xFFE8E4DA.toInt(), "yellow"), cbtn(0xFF27B3E6.toInt(), "blue")), wp(2.8f))
 
         // ses / kanal
         val mid = LinearLayout(this)
         mid.orientation = LinearLayout.HORIZONTAL
-        fun cell(v: View) = mid.addView(v, LinearLayout.LayoutParams(0, dp(140), 1f).apply {
-            setMargins(dp(5), dp(5), dp(5), dp(5))
+        fun cell(v: View) = mid.addView(v, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            setMargins(dp(4), dp(3), dp(4), dp(3))
         })
         cell(rocker("vu", "vd", "vo"))
         val ctr = LinearLayout(this)
         ctr.orientation = LinearLayout.VERTICAL
-        ctr.addView(lab(ibtn("ls", "guide"), "TV GUIDE"), LinearLayout.LayoutParams(-1, dp(58)))
-        ctr.addView(View(this), LinearLayout.LayoutParams(-1, 0, 1f))
-        ctr.addView(ibtn("mu", "mute"), LinearLayout.LayoutParams(-1, dp(40)))
+        ctr.addView(lab(ibtn("ls", "guide"), "TV GUIDE"), LinearLayout.LayoutParams(-1, 0, 2f))
+        ctr.addView(View(this), LinearLayout.LayoutParams(-1, 0, 0.6f))
+        ctr.addView(ibtn("mu", "mute"), LinearLayout.LayoutParams(-1, 0, 1.4f))
         cell(ctr)
         cell(rocker("cu", "cd", "ls"))
-        rc.addView(mid, full())
+        rc.addView(mid, wp(13f))
 
         // rakamlar
         for (r in 0..2) {
-            rc.addView(row(40, *Array(3) { c -> val n = r * 3 + c + 1; tbtn("$n", "d$n", size = 17f) }), full())
+            rc.addView(row(0, *Array(3) { c -> val n = r * 3 + c + 1; tbtn("$n", "d$n", size = 16f) }), wp(4f))
         }
-        rc.addView(row(40,
+        rc.addView(row(0,
             tbtn("TEXT", "txt", size = 10f, bold = true),
-            tbtn("0", "d0", size = 17f),
-            ibtn("ge", "set")), full())
+            tbtn("0", "d0", size = 16f),
+            ibtn("ge", "set")), wp(4f))
 
         rc.addView(TextView(this).apply {
             text = "PHILIPS"; textSize = 11f; setTextColor(0xFF9A9AA3.toInt()); letterSpacing = 0.18f
             setTypeface(Typeface.DEFAULT, Typeface.BOLD); gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+        }, LinearLayout.LayoutParams(-1, 0, 1.8f))
 
-        setContentView(sv)
+        setContentView(page)
     }
 
     override fun onPause() { release(); super.onPause() }
